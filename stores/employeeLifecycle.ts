@@ -10,6 +10,7 @@ import {
   deriveLifecycleStatus,
   type LifecycleAction,
 } from '@/src/lib/employees/lifecycleValidation';
+import { evaluateActivationPrerequisites } from '@/src/payroll/employeeActivationPrerequisites';
 import { useEmployeeStore } from './employees';
 
 export interface LifecycleTransitionResult {
@@ -68,6 +69,17 @@ export const useEmployeeLifecycleStore = create<EmployeeLifecycleState>()(
         const error = 'Employee not found.';
         set({ lastError: error });
         return { success: false, error };
+      }
+
+      // Activation has extra prerequisites (#627): the admin must not be able
+      // to bring a non-suspended or partially-onboarded employee back onto
+      // payroll without resolving the blockers first.
+      if (action === 'activate') {
+        const activationError = evaluateActivationPrerequisites(employee, role);
+        if (activationError) {
+          set({ lastError: activationError.message });
+          return { success: false, error: activationError.message };
+        }
       }
 
       const validationError = validateLifecycleTransition(employee, action, role);

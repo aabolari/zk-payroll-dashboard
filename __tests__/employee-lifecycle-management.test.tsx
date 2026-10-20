@@ -173,6 +173,59 @@ describe("EmployeeLifecycleManager", () => {
     expect(screen.getByText("Alice Mensah")).toBeInTheDocument();
     expect(screen.queryByText("Bob Owusu")).not.toBeInTheDocument();
   });
+
+  // ── 6. Activation prerequisite checks (#627) ────────────────────────────
+
+  it("blocks activation of a suspended employee whose onboarding is in progress", async () => {
+    const user = userEvent.setup();
+    seedEmployees([
+      employee({
+        id: "e1",
+        name: "Pend",
+        lifecycleStatus: "suspended",
+        isActive: false,
+        onboardingStatus: "in_progress",
+      }),
+    ]);
+
+    render(<EmployeeLifecycleManager />);
+
+    await user.click(screen.getByRole("button", { name: /activate pend/i }));
+    await user.click(screen.getByRole("button", { name: /^activate$/i }));
+
+    // Actionable prerequisite error is surfaced to the admin
+    expect(await screen.findByText(/onboarding is still in progress/i)).toBeInTheDocument();
+
+    // Roster was not mutated and no audit event was recorded
+    const updated = useEmployeeStore.getState().employees.find((e) => e.id === "e1");
+    expect(updated?.lifecycleStatus).toBe("suspended");
+    expect(useEmployeeLifecycleStore.getState().events).toHaveLength(0);
+  });
+
+  it("activates a suspended, fully onboarded employee for an admin", async () => {
+    const user = userEvent.setup();
+    seedEmployees([
+      employee({
+        id: "e1",
+        name: "Ready",
+        lifecycleStatus: "suspended",
+        isActive: false,
+        onboardingStatus: "completed",
+      }),
+    ]);
+
+    render(<EmployeeLifecycleManager />);
+
+    await user.click(screen.getByRole("button", { name: /activate ready/i }));
+    await user.click(screen.getByRole("button", { name: /^activate$/i }));
+
+    expect(await screen.findByText(/ready has been activated successfully/i)).toBeInTheDocument();
+
+    const updated = useEmployeeStore.getState().employees.find((e) => e.id === "e1");
+    expect(updated?.lifecycleStatus).toBe("active");
+    expect(updated?.isActive).toBe(true);
+    expect(useEmployeeLifecycleStore.getState().events).toHaveLength(1);
+  });
 });
 
 // ── Validation unit tests ───────────────────────────────────────────────────

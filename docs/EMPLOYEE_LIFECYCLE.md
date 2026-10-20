@@ -147,6 +147,50 @@ logged, or sent to telemetry with it.
    - A fully active draft renders no alert at all (silent clean state, not a green banner).
    - Duplicate ids in a draft are reported once.
 
+## Activation Prerequisite Checks (#627)
+
+Activating an employee makes them payroll-eligible again, so the dashboard
+validates the prerequisites *before* a lifecycle transition mutates the roster.
+The pure evaluation module `src/payroll/employeeActivationPrerequisites.ts`
+provides the checks used by the lifecycle store; no salary, commitment, or
+wallet value is read into any finding.
+
+### Prerequisites (in evaluation order)
+
+| # | Check | Blocker code | When it fails |
+| --- | --- | --- | --- |
+| 1 | Actor role | `unauthorized` | Activator is not an admin |
+| 2 | Record resolution | `missing_record` | The id is not in the roster |
+| 3 | Lifecycle state | `invalid_lifecycle_state` | Employee is not `suspended` (activation is not offered for active, offboarded, or archived records) |
+| 4 | Onboarding readiness | `onboarding_not_completed` | `onboardingStatus` is `in_progress` or `not_started` |
+
+### Behaviour
+
+- `evaluateActivationPrerequisites(employee, role)` returns `null` when every
+  prerequisite holds, or a structured `{ code, message }` error otherwise.
+- `stores/employeeLifecycle.ts` runs the check for every `activate` transition;
+  blocked activations mutate nothing and record no audit event.
+- `findBlockedActivationEntries(employees, employeeIds, role)` resolves a batch
+  of ids against the roster (stale ids surface as `missing_record`, duplicates
+  are reported once), and `validateActivationPrerequisiteBatch` returns a
+  `canProceed` summary with a one-line blocker message such as
+  `Kwame Asante (Onboarding not completed)`.
+
+### QA cases
+
+1. **Success** — admin activates a suspended, fully onboarded employee: the
+   transition succeeds, the audit event is recorded, and payroll eligibility
+   resumes.
+2. **Failure** — admin activates a suspended employee whose onboarding is
+   `in_progress`: the store returns the actionable error *"Employee onboarding
+   is still in progress. Complete onboarding before activating."*, the UI keeps
+   the record in the lifecycle screen unchanged, and no audit event is added.
+3. **Edge** — a batch id that is no longer in the roster is surfaced as
+   `missing_record`; duplicate ids are reported once; non-admin roles are
+   rejected at `unauthorized` before any roster lookup.
+
+---
+
 ## Import Reference Collision Warning
 
 During employee CSV imports and batch onboarding, external import references (e.g. `IMP-2025-001`) are checked against existing processed batch identifiers before work is committed.

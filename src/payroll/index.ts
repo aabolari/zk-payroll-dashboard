@@ -21,3 +21,4 @@ export * from "./payoutConfirmationRetryPolicy";
 export * from "./duplicatePayoutDetection";
 export * from "./periodReopenRestrictions";
 export * from "./draftComparisonSnapshot";
+export * from "./employeeActivationPrerequisites";
